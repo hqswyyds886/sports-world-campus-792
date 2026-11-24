@@ -1252,6 +1252,87 @@ class RunningTrackBuilder:
         return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def build_geo_fences_json(fences: Sequence[Any]) -> str:
+    """把围栏对象序列化成**真机回显形态**的 `geoFencesJson`。
+
+    ## 为什么不能直接 dump 服务端下发的 raw
+
+    服务端**下发**的围栏与真机**回传**的围栏字段名不一样：
+
+    | 位置 | 下发（请求） | 回传（提交报文） |
+    |---|---|---|
+    | 条目 | `id` / `name` / `points` | `distance` / `id` / `name` / `points` |
+    | 顶点纬度 | `glat` / `lat` | `glat` / `lat` |
+    | 顶点经度 | `**glon**` / `**lon**` | `**glng**` / `**lng**` |
+    | 顶点序号 | `pointsNumber` | 无 |
+
+    直接 `json.dumps([f.raw ...])` 会把这些下发字段名原样发回去，
+    服务端按 `glng` / `lng` 取值就得到空值，围栏多边形落空 ——
+    App 跑步记录页里**画不出那个绿色围栏框**，两天后复核时判「轨迹无法
+    归属到任何围栏」，记录失效。
+
+    实测依据：`obs_PASS_*.json` 里 `fixed_point_json` 的 `geoFencesJson`
+    是 `[{"distance":0.0,"id":1922,"name":"围栏2","points":[{"glat":…,
+    "glng":…,"lat":0.0,"lng":0.0}, …]}]`，共 8 个顶点；
+    而 `obs_CHEAT_*.json` 里这一项是 `[]`。
+
+    ## 归一化规则
+
+    - 条目补 `distance`（真机是 0.0）
+    - 顶点经度 `glon`→`glng`、`lon`→`lng`
+    - 去掉 `pointsNumber`
+    - `lat`/`lng` 缺失或为 None 时补 0.0（真机就是 0.0，不是真实 WGS 值）
+    """
+    out: List[Dict[str, Any]] = []
+    for fence in fences or []:
+        raw = getattr(fence, "raw", None)
+        if not isinstance(raw, dict):
+            raw = fence if isinstance(fence, dict) else {}
+        points_in = raw.get("points") or []
+        points: List[Dict[str, Any]] = []
+        for p in points_in:
+            if not isinstance(p, dict):
+                continue
+            glat = _first_num(p, ("glat", "gLat", "lat"))
+            glng = _first_num(p, ("glng", "gLng", "glon", "gLon", "lng", "lon"))
+            lat = _first_num(p, ("lat",))
+            lng = _first_num(p, ("lng", "lon"))
+            points.append({
+                "glat": glat,
+                "glng": glng,
+                "lat": lat,
+                "lng": lng,
+            })
+        entry = {
+            "distance": raw.get("distance", 0.0),
+            "id": raw.get("id", getattr(fence, "fence_id", 0)),
+            "name": raw.get("name", getattr(fence, "fence_name", "")),
+            "points": points,
+        }
+        out.append(entry)
+    return json.dumps(out, separators=(",", ":"), ensure_ascii=False)
+
+
+def _first_num(container: Dict[str, Any], keys: Sequence[str]) -> float:
+    """按顺序取第一个是数值的字段，都取不到返回 0.0。
+
+    `lat` / `lng` 在真机回传里恒为 0.0（占位），真实坐标只走 `glat`/`glng`，
+    所以这里允许 0.0 作为合法结果，不把它当成"缺失"再去兜底。
+    """
+    for key in keys:
+        value = container.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                continue
+    return 0.0
+
+
 def _point_dict(point) -> Dict[str, Any]:
     """采样点序列化；兼容带 to_dict() 的模型与轻量对象。"""
     to_dict = getattr(point, "to_dict", None)

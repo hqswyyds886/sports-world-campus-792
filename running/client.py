@@ -27,7 +27,7 @@ from .config import (
     OBS_BUCKET_NAME
 )
 from .models import RunningSubmissionResult
-from .builder import RunningTrackBuilder
+from .builder import RunningTrackBuilder, build_geo_fences_json
 from .realism import PaceProfile, physiological_profile, personal_style, MIN_HISTORY_SAMPLES
 from .compliance import ComplianceValidator
 from .geometry import polygon_area_m2
@@ -752,13 +752,11 @@ class RunningClient(BaseNetSecClient):
                              else int(getattr(setup.fence, "fence_id", -1))),
                 # envelope 里那个固定发 -1（真机形态），不要跟着上面变
                 envelope_run_area_id=-1,
-                # `ensure_ascii=False`：围栏名是中文（「围栏2」），默认的
-                # `ensure_ascii=True` 会把它转成 `\u56f4\u680f2`。
-                # 真机是 Gson 序列化，输出的是 UTF-8 原文，不是转义序列。
-                # 服务端若把这段字符串原样回显或做等值比对，转义形态就对不上。
-                geo_fences_json=json.dumps([f.raw for f in setup.fences],
-                                           separators=(",", ":"),
-                                           ensure_ascii=False),
+                # 围栏回显必须走 `build_geo_fences_json`，不能直接 dump 服务端
+                # 下发的 raw —— 下发的顶点经度字段叫 `glon`/`lon`，而真机回传
+                # 时是 `glng`/`lng`。字段名不对，服务端就取不到围栏坐标，
+                # App 里画不出绿框，两天后复核判记录失效。
+                geo_fences_json=build_geo_fences_json(setup.fences),
                 total_ascent=total_ascent,
                 physio=physio,
                 jitter_buckets=realism
