@@ -15,15 +15,48 @@
 | 源码 | `/opt/sport-campus` |
 | 数据 | `/var/lib/sport-campus`（`ZJWH_DATA_DIR`） |
 | 服务 | systemd `sport-campus` |
-| 端口 | `0.0.0.0:8420` |
+| **对外端口** | `0.0.0.0:8420`（nginx，**Basic Auth**） |
+| **内部端口** | `127.0.0.1:8421`（webui.py，仅本机） |
 | 日志 | `/var/log/sport-campus.log` |
 
 **与 kaoyan 站完全隔离**：kaoyan 走 nginx `80 → 127.0.0.1:8001`，
-本项目直接占 8420，不经过 nginx，也不改动任何 nginx 配置。
+本项目走 nginx `8420 → 127.0.0.1:8421`，两条 server 块互不相干。
+
+### 架构
+
+```
+浏览器 ──Basic Auth──> nginx:8420 ──> 127.0.0.1:8421 (webui.py)
+```
+
+认证**故意放在 nginx 而不是 Flask 里**：
+
+* `webui.py` 是上游源码，升级时整目录替换 —— 认证写进去下次升级就没了
+* nginx 只绑 `8420`，webui 只绑 `127.0.0.1`，nginx 挂了也不会裸奔
+* 顺带能加限流（同 IP 每分钟 20 次认证尝试）
 
 ---
 
-## 二、日常运维
+## 二、登录凭据
+
+| 项 | 值 |
+|---|---|
+| 用户名 | `fh` |
+| 密码 | 见服务器 `/etc/nginx/.htpasswd-sport`（apr1 哈希，不可逆） |
+| 认证文件 | `/etc/nginx/.htpasswd-sport`（root:www-data 640） |
+
+**改密码**：
+
+```bash
+printf '%s\n' '新密码' | openssl passwd -apr1 -stdin | \
+  sed 's/^/fh:/' > /etc/nginx/.htpasswd-sport
+chmod 640 /etc/nginx/.htpasswd-sport
+chown root:www-data /etc/nginx/.htpasswd-sport
+systemctl reload nginx
+```
+
+---
+
+## 三、日常运维
 
 ```bash
 systemctl status  sport-campus     # 看状态
@@ -61,8 +94,8 @@ systemctl restart sport-campus
 
 ```ini
 [webui]
-host = 0.0.0.0
-port = 8420
+host = 127.0.0.1     # 只绑本机，对外由 nginx 承担
+port = 8421          # 内部端口；对外是 nginx 的 8420
 
 [session]
 session_file = .session.json
@@ -87,17 +120,22 @@ session_file = .session.json
 `ufw` 默认拒绝入站，`8420` 不在原清单里（原本只有 22/80/443/8001），
 所以只开安全组时外网仍然连不上。
 
+**8421 不需要放行任何一层** —— 它只监听 `127.0.0.1`，外部本就连不上。
+
 ---
 
 ## 五、安全状态
 
-按需求采用「**非默认端口 + 不做认证**」。这意味着：
+| 项 | 状态 |
+|---|---|
+| `8420` 无凭据访问 | **401** 已拦 |
+| `8420/api/*` 无凭据 | **401** 已拦 |
+| 错误密码 | **401** 已拦 |
+| 正确凭据 | 200 |
+| `8421` 外网可达性 | 不可达（只绑 127.0.0.1） |
+| 认证爆破防护 | 同 IP 每分钟 20 次（`limit_req zone=sport_auth`） |
 
-- 任何人知道 `120.25.197.216:8420` 就能打开控制台
-- 控制台可以操作账号登录、发起跑步提交
-
-**建议后续至少做一项**：加 nginx Basic Auth、限制来源 IP，或改成只绑
-`127.0.0.1` 走 SSH 隧道。当前状态适合临时使用。
+认证在 nginx `server` 层，所有 `location` 自动继承 —— 新加路由不会漏掉。
 
 ---
 
@@ -105,12 +143,16 @@ session_file = .session.json
 
 | 项 | 结果 |
 |---|---|
-| 外网首页 | `http://120.25.197.216:8420/` → 200 |
-| `/api/status` | `{"logged_in":false,"uid":null,"unid":null}` |
-| `/api/config` | `{"ok":true,"proxy":""}` |
-| `/api/device-id` | 返回合法 DeviceId |
+| 外网 8420 无凭据 | 401 |
+| 外网 8420 正确凭据 | 200 |
+| 外网 8420 错误密码 | 401 |
+| 外网 `/api/status` 无凭据 | 401 |
+| 外网 `/api/status` 带凭据 | 200，`{"logged_in":false,...}` |
+| 8421 外网 | 不可达（正确） |
 | kaoyan 站首页 | 200（未受影响） |
-| kaoyan `/api/health` | 200（未受影响） |
+| kaoyan `/api/health` | 200，`version=2.0`（未受影响） |
+| `systemctl is-active` | sport-campus / nginx / kaoyan 均 active |
+| `systemctl is-enabled` | sport-campus = enabled（开机自启） |
 
 ---
 
