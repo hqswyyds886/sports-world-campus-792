@@ -1,6 +1,31 @@
 # 运动世界校园 7.3.92 协议套件
 
+[![version](https://img.shields.io/badge/version-1.0.0-blue)](CHANGELOG.md)
+[![target](https://img.shields.io/badge/target%20app-7.3.92-green)](VERSION.md)
+[![protocol](https://img.shields.io/badge/NetSecKit-4.2.4-orange)](FINDINGS.md)
+[![license](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
+
 纯 Python 实现的运动世界校园 7.3.92 协议客户端，支持跑步提交、拟真增强、Web 控制台等功能。
+
+> **版本 1.0.0** · 2026-11-24 · 首个通过实机验证的版本
+>
+> 变更历史见 [CHANGELOG.md](CHANGELOG.md)，兼容性矩阵与校验和见 [VERSION.md](VERSION.md)，
+> 逆向结论与判罚链路证据见 [FINDINGS.md](FINDINGS.md)。
+
+## 这个项目解决了什么
+
+服务端会在提交**两天后**复核，把「轨迹无法归属到围栏」的记录判为失效。
+本项目的核心工作是把报文的形态对齐到真机通过样本，解决了四个层级的根因：
+
+| # | 根因 | 后果 | 修复 |
+|---|---|---|---|
+| 1 | `position` 全 999 | 判 `type=0 运动数据有问题` | 发 `0..N-1` 连续序号 |
+| 2 | `geoFencesJson` 为空 | 服务端不知轨迹属于哪个围栏 | 填入完整围栏回显 |
+| 3 | 围栏顶点 `glon`/`lon` | 按 `glng`/`lng` 取到空值，画不出绿框 | 归一化字段名 |
+| 4 | `run_data` 是裸数组 | App 读 `run_data.allLocJson` 得 null，轨迹与绿框都不画 | 包成 `{allLocJson, useZip}` |
+
+第 4 条是最隐蔽的：前三条都修好之后绿框仍然不出现，因为 App 压根没读到轨迹数据。
+详见 [CHANGELOG.md](CHANGELOG.md) 与 [FINDINGS.md](FINDINGS.md)。
 
 ## 来源与声明
 
