@@ -37,6 +37,8 @@ def main():
     parser.add_argument("--checkpoints", action="store_true", help="单独查询官方计分跑点位，不上传成绩")
     parser.add_argument("--profile", action="store_true", help="查询学生个人档案")
     parser.add_argument("--history", action="store_true", help="查询最近历史记录与打卡日历")
+    parser.add_argument("--audit", action="store_true",
+                        help="跨记录体检：连续天数 / 整点集中度 / 里程与配速变异 / 轨迹重合度")
 
     # 跑步相关选项
     parser.add_argument("--run", action="store_true", help="触发一键全时序跑步与结算")
@@ -146,6 +148,10 @@ def main():
     if args.history:
         _print_history(client)
 
+    # 6.5 跨记录体检
+    if args.audit:
+        _print_audit(client)
+
     # 7. 拟人跑步提交
     if args.run:
         _submit_run(client, args)
@@ -158,10 +164,47 @@ def main():
 # 命令的输出时不必通读 main。main 现在只负责「按参数依次调用它们」。
 # --------------------------------------------------------------------------- #
 
+def _print_audit(client):
+    """跨记录体检：把历史记录算成「像不像真人」的可读报告。
+
+    只发一次历史列表请求，其余全在本地算。
+    """
+    from running import audit as audit_mod
+
+    try:
+        resp = client.history.get_run_records(page_num=1, page_size=50)
+    except Exception as exc:
+        print(f"跨记录体检: 拉取历史失败（{type(exc).__name__}: {exc}）")
+        return
+    rows = (resp.get("data") if isinstance(resp, dict) else None) or []
+
+    records = audit_mod.from_history_rows(rows)
+    metrics, findings = audit_mod.report(records)
+
+    print("=" * 72)
+    print("跨记录体检")
+    print("=" * 72)
+    if metrics.count == 0:
+        print("  没有可体检的记录")
+        return
+    print("  记录数 %d · 跨度 %d 天 · 最长连续 %d 天"
+          % (metrics.count, metrics.span_days, metrics.streak_best))
+    print("  里程 均值 %.0fm · 变异系数 %.4f" % (metrics.dist_mean, metrics.dist_cv))
+    print("  配速 均值 %.2f 分/km · 变异系数 %.4f" % (metrics.pace_mean, metrics.pace_cv))
+    print("  起跑最集中 %02d 点 · 占 %.0f%%" % (metrics.hour, metrics.hour_share * 100))
+    print()
+    for f in findings:
+        print("  " + f.line())
+    print()
+    print("  建议：")
+    for tip in audit_mod.suggest(metrics, findings):
+        print("    · " + tip)
+    print("=" * 72)
+
 def _no_explicit_action(args) -> bool:
     """没有指定任何具体动作时，默认只做一次时钟对齐。"""
     return not any((args.rules, args.checkpoints, args.profile,
-                    args.history, args.run, args.watch_ad))
+                    args.history, args.audit, args.run, args.watch_ad))
 
 
 def _login(client, args) -> bool:
