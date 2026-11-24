@@ -31,7 +31,7 @@ from running import pass_form                              # noqa: E402
 # 真实 PASS 样本
 # ---------------------------------------------------------------------------
 
-PASS_FILES = ["obs_PASS_1333728921.json", "obs_PASS_1331722339.json"]
+PASS_FILES = ["obs_PASS_1000000015.json", "obs_PASS_1000000018.json"]
 
 
 def unbox(value):
@@ -151,7 +151,7 @@ def build_local() -> Dict[str, Any]:
 
     rng = random.Random(20261124)
     builder = RunningTrackBuilder(
-        uid=16620891, unid=122301, sport_type=1,
+        uid=10000001, unid=100001, sport_type=1,
         uuid_str="11111111-2222-3333-4444-555555555555", rng=rng)
 
     center_lat = sum(c["glat"] for c in CHECKPOINTS) / len(CHECKPOINTS)

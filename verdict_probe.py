@@ -14,7 +14,7 @@ from config_loader import get_session_file_path
 sess = load_session(get_session_file_path())
 cli = SportClient792(uid=sess.get("uid"), token=sess.get("token"), unid=sess.get("unid"))
 
-RR = [1356929149, 1356874884, 1356829957, 1344569016, 1343169713]
+RR = [1000000002, 1000000003, 1000000004, 1000000005, 1000000006]
 
 # 先看列表原始结构里有哪些字段
 raw = cli.history.execute_request("POST", "https://run.gxapp.iydsj.com/api/v70230/runnings/records",

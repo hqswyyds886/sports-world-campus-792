@@ -15,7 +15,7 @@ def unbox(v):
 def load(name):
     return json.loads(open(os.path.join(BASE, name), encoding='utf-8').read())
 
-samples = ['obs_PASS_1333728921.json', 'obs_PASS_1331722339.json']
+samples = ['obs_PASS_1000000015.json', 'obs_PASS_1000000018.json']
 
 for name in samples:
     d = load(name)

@@ -64,7 +64,7 @@ def keys_for(uuid, start_ms, uid_, sport):
     return out
 
 
-TARGETS = [(1333728921, "PASS"), (1331722339, "PASS"), (1343169713, "CHEAT"), (1344569016, "CHEAT")]
+TARGETS = [(1000000015, "PASS"), (1000000018, "PASS"), (1000000006, "CHEAT"), (1000000005, "CHEAT")]
 
 for rrid, tag in TARGETS:
     print("=" * 78)

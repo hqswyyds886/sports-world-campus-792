@@ -48,7 +48,7 @@ import math
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # ---------------------------------------------------------------------------
-# 实测常量（来源：obs_PASS_1333728921.json / obs_PASS_1331722339.json）
+# 实测常量（来源：obs_PASS_1000000015.json / obs_PASS_1000000018.json）
 # ---------------------------------------------------------------------------
 
 #: PASS 样本的点字段顺序（27 个）。顺序本身也是对齐项：服务端虽然按 key 取值，
@@ -60,10 +60,10 @@ POINT_FIELD_ORDER: Tuple[str, ...] = (
     "totalDis", "totalTime", "type", "validDis", "validTime",
 )
 
-#: `count` 的众数。样本 1333728921 全场 804 点都是 10；1331722339 有 10 和 19 两种，
+#: `count` 的众数。样本 1000000015 全场 804 点都是 10；1000000018 有 10 和 19 两种，
 #: 其中 10 占绝大多数。取 10 作为基线。
 COUNT_BASE = 10
-#: `count` 偶尔抬高的概率与幅度（对齐 1331722339 的 2 值分布）。
+#: `count` 偶尔抬高的概率与幅度（对齐 1000000018 的 2 值分布）。
 COUNT_SPIKE_P = 0.0004
 COUNT_SPIKE_VAL = 19
 
@@ -265,7 +265,7 @@ def assign_checkpoint_types(point_count: int,
                             checkpoint_indices: Sequence[int]) -> List[int]:
     """按 PASS 样本的 `type` 分布给每个点打标记。
 
-    实测分布（1333728921，804 点）::
+    实测分布（1000000015，804 点）::
 
         {0: 784, 7: 11, 5: 1, 2: 5, 3: 2, 6: 1}
 
@@ -443,8 +443,8 @@ def build_laps(
 
 PASS_PROFILE: Dict[str, Any] = {
     "_source": [
-        "obs_PASS_1333728921.json (rrid 1333728921, 2008m/663s, status=0)",
-        "obs_PASS_1331722339.json (rrid 1331722339, 2015m/650s, status=0)",
+        "obs_PASS_1000000015.json (rrid 1000000015, 2008m/663s, status=0)",
+        "obs_PASS_1000000018.json (rrid 1000000018, 2015m/650s, status=0)",
     ],
     "point_count": {"r1": 804, "r2": 803},
     "field_count": 27,

@@ -65,7 +65,7 @@ def sph_length(points):
 def run_case(distance_m, time_sec, steps, label):
     rng = random.Random(20261124)
     builder = RunningTrackBuilder(
-        uid=16620891, unid=122301, sport_type=1,
+        uid=10000001, unid=100001, sport_type=1,
         uuid_str="11111111-2222-3333-4444-555555555555", rng=rng)
     center_lat = sum(c["glat"] for c in CHECKPOINTS) / len(CHECKPOINTS)
     center_lng = sum(c["glon"] for c in CHECKPOINTS) / len(CHECKPOINTS)

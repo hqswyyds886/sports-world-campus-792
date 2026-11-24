@@ -992,10 +992,10 @@ class RunningTrackBuilder:
 
         对比同一账号的 PASS / CHEAT 记录（OBS 原始明细解出）：
 
-        * PASS `1333728921`：`position = 0,1,2,3,4`
-        * PASS `1331722339`：`position = 0,1,2,3,4`
-        * CHEAT `1343169713`：`position = 999,999,999,999,999`
-        * CHEAT `1344569016`：`position = 999,999,999,999,999`
+        * PASS `1000000015`：`position = 0,1,2,3,4`
+        * PASS `1000000018`：`position = 0,1,2,3,4`
+        * CHEAT `1000000006`：`position = 999,999,999,999,999`
+        * CHEAT `1000000005`：`position = 999,999,999,999,999`
 
         CHEAT 记录的详情里多出一条判负项 `type=0 运动数据有问题`，
         而里程、配速、步频、点位顺序四项全部 `completeStatus=1`。

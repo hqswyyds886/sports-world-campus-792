@@ -53,7 +53,7 @@ def measured_length(points):
 
     真机 `allLocJson` 的点里 `lat`/`lng` 恒为 `-1.0`（占位，服务端不读），
     真实坐标在 `gLat`/`gLng`，坐标系由 `coorType` 声明为 `gcj02`。
-    实测样本 `obs_PASS_1333728921.json` / `obs_PASS_1331722339.json`
+    实测样本 `obs_PASS_1000000015.json` / `obs_PASS_1000000018.json`
     共 1607 个点，`lat`/`lng` 的唯一值都是 `[-1.0]`。
 
     旧实现没有这个区分，因为当时点结构是自定义的 6 字段（`lat/lon/time/
@@ -228,7 +228,7 @@ class OfflineEndToEndTests(unittest.TestCase):
         locations = json.loads(body['allLocJson'])
 
         # 真机形态用 `flag` 承载「本场起始毫秒戳」，全场同一个值，
-        # 而不是每点一个 `time`。实测样本 obs_PASS_1333728921 的 804 个点里
+        # 而不是每点一个 `time`。实测样本 obs_PASS_1000000015 的 804 个点里
         # `flag` 唯一值只有 1 个。时间进而在 `totalTime` / `validTime` 里累计。
         self.assertEqual(locations[0]['flag'], body['startTime'])
         self.assertEqual({p['flag'] for p in locations}, {body['startTime']})
