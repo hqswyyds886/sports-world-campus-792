@@ -1,0 +1,67 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# 敏感配置
+config.ini
+.session.json
+# 网页控制台运行时产物（含本机 device_id 与日志）
+.webui_config.json
+
+# 打包产物
+build/
+dist/
+*.exe
+*.spec~
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志
+*.log
+
+# 测试
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 临时文件
+*.tmp
+*.bak
+.DS_Store
+
+
+# 本地风控账本与落盘的风控规则（运行时产物，不入库）
+state/
+
+# Android 构建产物与本地工具链路径（源码经 android/sync_python.py 自动同步，不入库）
+android/local.properties
+android/.gradle/
+android/build/
+android/app/build/
+android/app/src/main/python/
+android/.idea/
+*.apk
+*.aab
+
+# Node 依赖（playwright 求解器，仅本地跑极验用）
+node_modules/
+package-lock.json
+package.json
+
+# 运行期产物
+.obs_*.json
+obs_*.json
+state/
