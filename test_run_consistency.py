@@ -62,8 +62,17 @@ class RunConsistencyTests(unittest.TestCase):
         self.assertEqual(points[-1].time-points[0].time, 760000)
         self.assertTrue(all(a.time < b.time for a,b in zip(points,points[1:])))
         # OBS and settlement must carry the same data, including bucket remainders.
-        for field, obs_field in [('allLocJson','run_data'), ('fivePointJson','fixed_point_json')]:
-            self.assertEqual(body[field], gzip.decompress(base64.b64decode(obs[obs_field])).decode())
+        #
+        # `run_data` 在 OBS 里是对象 `{"allLocJson": "...", "useZip": false}`，
+        # 不是裸点数组 —— 真机 PASS 样本就是这么存的，App 读
+        # `run_data.allLocJson` 取轨迹。发裸数组会让 App 拿到 null，
+        # 轨迹和围栏绿框都画不出来。
+        run_data = json.loads(gzip.decompress(base64.b64decode(obs['run_data'])).decode())
+        self.assertEqual(set(run_data), {'allLocJson', 'useZip'})
+        self.assertFalse(run_data['useZip'])
+        self.assertEqual(body['allLocJson'], run_data['allLocJson'])
+        self.assertEqual(body['fivePointJson'],
+                         gzip.decompress(base64.b64decode(obs['fixed_point_json'])).decode())
         for field, obs_field in [('stepsPerTenSec','step_freq_json'), ('speedPerTenSec','speed_json')]:
             decoded=json.loads(gzip.decompress(base64.b64decode(obs[obs_field])))
             self.assertEqual(body[field], decoded)
