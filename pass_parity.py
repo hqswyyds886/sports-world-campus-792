@@ -44,11 +44,20 @@ def unbox(value):
 
 
 def load_pass_sample(name: str) -> Dict[str, Any]:
-    """解出一条真实 PASS 记录的 run_data / segment / laps / fixed_point。"""
+    """解出一条真实 PASS 记录的 run_data / segment / laps / fixed_point。
+
+    `run_data` 是对象 `{"allLocJson": "...", "useZip": false}`（真机形态），
+    点数组在 `allLocJson` 里。旧版本这里直接把 run_data 当数组用，
+    真机样本一进来就崩。
+    """
     raw = json.loads(open(os.path.join(BASE, name), encoding="utf-8").read())
     run_data = unbox(raw.get("run_data") or "") or {}
-    loc = run_data.get("allLocJson")
-    points = json.loads(loc) if isinstance(loc, str) else (loc or [])
+    if isinstance(run_data, dict):
+        loc = run_data.get("allLocJson")
+        points = json.loads(loc) if isinstance(loc, str) else (loc or [])
+    else:
+        # 容错：早期样本或已归一化的裸数组
+        points = run_data if isinstance(run_data, list) else []
     return {
         "name": name,
         "points": points,
@@ -366,7 +375,12 @@ def run(verbose: bool = False) -> int:
 
     # 本地生成的点（已序列化成 27 字段）
     run_data = unbox(local["obs_payload"]["run_data"])
-    gen_points = json.loads(run_data) if isinstance(run_data, str) else run_data
+    # run_data 是对象 {"allLocJson": "...", "useZip": false}，点数组在 allLocJson 里
+    if isinstance(run_data, dict):
+        loc = run_data.get("allLocJson")
+        gen_points = json.loads(loc) if isinstance(loc, str) else (loc or [])
+    else:
+        gen_points = json.loads(run_data) if isinstance(run_data, str) else (run_data or [])
     local["gen_profile"] = build_gen_profile(gen_points)
     local["positions"] = [p.position for p in local["five"]]
     local["segments"] = _as_list(unbox(local["obs_payload"]["segment_json"]))
