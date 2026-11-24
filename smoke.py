@@ -51,6 +51,19 @@ SKIP_DIRS = {"__pycache__", "build", "dist", "venv", "env", ".git", ".idea", ".v
 # webui.py 依赖 flask，而核心协议刻意保持零第三方依赖，缺 flask 不该判定失败。
 IMPORT_OPTIONAL = {"webui"}
 
+# 导入即执行的一次性探测脚本：它们没有 `main()`，文档顶层跑真实网络请求，
+# CLI 参数也从 `sys.argv` 直接取。导入它们等于「用冒烟机的凭据发一轮请求」，
+# 轻则慢、重则打乱服务端风控计数。仍然参与语法检查，但不参与导入检查。
+#
+# 这不是把坏代码藏起来：这些文件**本来就该只在命令行跑**（`python live_probe.py`）。
+# 早先没排除，`live_probe` / `risk_probe` 在导入时走上「凭据缺失」分支
+# 直接 `sys.exit(1)`，而 `SystemExit` 不是 `Exception` —— stage_import 的
+# `except Exception` 接不住它，于是整个冒烟**静默退出、退出码 1、没有任何
+# 诊断行**。CI 从此永远红着，而日志里一个字都不说为什么。
+IMPORT_SCRIPTS = {"live_probe", "risk_probe", "obs_fetch", "obs_unbox",
+                  "verdict_probe", "final_check", "fix_obs_fence",
+                  "logout_account", "device_id_tool"}
+
 # 关键文件的公开契约。任何一个符号消失都说明该文件被改坏了 ——
 # 这正是 builder.py 那次事故的形态：文件还在、语法合法、但类没了。
 CONTRACTS: Dict[str, Sequence[str]] = {
@@ -414,12 +427,16 @@ def stage_contracts(trees: Dict[Path, ast.Module], console: Console) -> bool:
 def stage_import(sources: List[Path], console: Console) -> bool:
     modules = []
     skipped = []
+    scripts = []
     for path in sources:
         name = module_name(path)
         if not name or path.name.startswith("test_"):
             continue  # 测试模块由 discover 导入，这里不重复
         if name in IMPORT_OPTIONAL:
             skipped.append(name)
+            continue
+        if name in IMPORT_SCRIPTS:
+            scripts.append(name)
             continue
         modules.append(name)
 
@@ -434,7 +451,11 @@ def stage_import(sources: List[Path], console: Console) -> bool:
         try:
             with contextlib.redirect_stdout(noise), contextlib.redirect_stderr(noise):
                 importlib.import_module(name)
-        except Exception as exc:                     # noqa: BLE001 - 冒烟要抓住一切
+        except BaseException as exc:                 # noqa: BLE001 - 冒烟要抓住一切
+            # 必须是 BaseException 而不是 Exception：脚本型模块在缺凭据时会
+            # `sys.exit(1)`，而 SystemExit 直接继承 BaseException。只接
+            # Exception 的话，导入阶段会**静默吞掉退出意图并中断整个冒烟** ——
+            # 屏幕上停在「[3/5] 模块导入」不动，退出码 1，没有失败原因。
             failures.append(f"{name}  {type(exc).__name__}: {exc}")
 
     if failures:
@@ -445,6 +466,9 @@ def stage_import(sources: List[Path], console: Console) -> bool:
 
     note = f"（跳过需第三方依赖的 {', '.join(skipped)}）" if skipped else ""
     console.ok(f"{len(modules)} 个模块全部可导入{note}")
+    if scripts:
+        console.info(f"跳过 {len(scripts)} 个导入即执行的探测脚本"
+                     f"（{', '.join(sorted(scripts))}），它们由语法检查覆盖")
 
     chatter = [line for line in noise.getvalue().splitlines() if line.strip()]
     if chatter:

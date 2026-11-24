@@ -223,7 +223,13 @@ class GetterShapeTests(_TempConfigCase):
     def test_base_dir_points_at_package_root(self):
         base = get_base_dir()
         self.assertTrue((base / "config_loader.py").exists())
-        self.assertEqual(base.name, "7.3.92")
+        # 不钉死目录名。这个函数的契约是「返回代码所在目录」，不是「目录必须叫
+        # 7.3.92」—— 后者会让任何克隆名 / 解压名 / CI 检出名都失败，
+        # 而失败原因与配置逻辑毫无关系。要验证的是它指向仓库根而不是子目录：
+        # 入口文件与本函数自身都在根下，两个锚点同时成立才算数。
+        self.assertTrue((base / "cli.py").exists())
+        self.assertTrue((base / "running").is_dir())
+        self.assertEqual(base, Path(__file__).resolve().parent)
 
 
 class CoreConfigConsistencyTests(unittest.TestCase):

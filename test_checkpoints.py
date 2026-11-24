@@ -166,7 +166,21 @@ class CheckpointTests(unittest.TestCase):
         self.assertFalse(envelope['useZip'])
         self.assertFalse(envelope['freedomShowFence'])
         self.assertEqual(envelope['runAreaId'],-1)
-        self.assertEqual(json.loads(envelope['geoFencesJson']),[self.fence().raw])
+        # 围栏回显必须**归一化后再发**，不能把下发原文原样 dump 回去。
+        # 服务端下发用 `glon`/`lon`，真机回传用 `glng`/`lng`（且条目多一个
+        # `distance: 0.0`）。直接透传会让服务端按 `glng` 取到空值 → 多边形
+        # 落空 → App 画不出绿框。这条断言就是钉住那次修复（d929822）。
+        echoed=json.loads(envelope['geoFencesJson'])
+        self.assertEqual(len(echoed),1)
+        self.assertEqual(echoed[0]['id'],3)
+        self.assertEqual(echoed[0]['name'],'test')
+        self.assertEqual(echoed[0]['distance'],0.0)
+        [pt]=echoed[0]['points']
+        self.assertEqual(set(pt),{'lat','lng','glat','glng'})
+        self.assertAlmostEqual(pt['glng'],119.994,places=6)
+        self.assertAlmostEqual(pt['glat'],29.994,places=6)
+        self.assertAlmostEqual(pt['lng'],120.0,places=6)
+        self.assertAlmostEqual(pt['lat'],30.0,places=6)
 
     def test_missing_school_rule_stops_before_upload(self):
         client=RunningClient(uid=1,token='DUMMY',unid=2,device_config={'DeviceId':'1'*32})

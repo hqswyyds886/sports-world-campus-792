@@ -241,7 +241,13 @@ class FrontendParityTests(unittest.TestCase):
         script = (body.group(1)
                   + f"\nconst pts={json.dumps(self.POINTS)};"
                     "\nconsole.log(JSON.stringify(pts.map(fmtPace)));")
-        proc = subprocess.run([NODE_BIN, "-e", script], capture_output=True, text=True)
+        # `text=True` 单独用会按**系统 locale** 解码，而 Node 一律输出 UTF-8。
+        # 中文 Windows 的默认编码是 GBK，`fmtPace` 的输出里带「分/秒」这类
+        # 汉字时，解码直接抛 UnicodeDecodeError，被 subprocess 的读线程吞进
+        # 后台线程里 —— 表现为 `proc.stdout` 为 None、测试报一个与配速毫无
+        # 关系的错。显式钉住 UTF-8，跨机器语言设置才稳定。
+        proc = subprocess.run([NODE_BIN, "-e", script], capture_output=True,
+                              text=True, encoding="utf-8", errors="replace")
         self.assertEqual(proc.returncode, 0, proc.stderr[:400])
 
         js_paces = json.loads(proc.stdout)
