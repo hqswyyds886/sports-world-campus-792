@@ -279,8 +279,16 @@ class OfflineEndToEndTests(unittest.TestCase):
                 raw = gzip.decompress(base64.b64decode(encoded)).decode('utf-8')
                 self.assertIsInstance(raw, str)
         decoded = lambda name: gzip.decompress(base64.b64decode(payload[name])).decode()
-        # OBS 与 body 必须同源：各自序列化一次会让浮点/键序漂移
-        self.assertEqual(decoded('run_data'), body['allLocJson'])
+        # OBS 与 body 必须同源：各自序列化一次会让浮点/键序漂移。
+        #
+        # `run_data` 是**对象** `{"allLocJson": "...", "useZip": false}`，
+        # 不是裸点数组 —— 真机 PASS 样本（obs_PASS_1000000015.json）解出来
+        # keys=["allLocJson","useZip"]，App 读 `run_data.allLocJson`。
+        # 早先发裸数组时 App 取到 null，轨迹与围栏绿框都画不出来。
+        run_data = json.loads(decoded('run_data'))
+        self.assertEqual(set(run_data), {'allLocJson', 'useZip'})
+        self.assertFalse(run_data['useZip'])
+        self.assertEqual(run_data['allLocJson'], body['allLocJson'])
         self.assertEqual(decoded('fixed_point_json'), body['fivePointJson'])
         self.assertEqual(json.loads(decoded('step_freq_json')), body['stepsPerTenSec'])
 
