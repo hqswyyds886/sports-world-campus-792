@@ -530,15 +530,28 @@ class RunningTrackBuilder:
             "rrid": gzip_base64_encode(""),
             "uid": gzip_base64_encode(str(self.uid)),
             "uuid": gzip_base64_encode(self.uuid),
-            "run_data": gzip_base64_encode(all_loc_json),
+            # `run_data` 必须是**对象** `{"allLocJson": "<点数组的JSON字符串>", "useZip": false}`，
+            # 不是裸点数组。
+            #
+            # 实测真机 PASS 样本（obs_PASS_1000000015.json）解出来是：
+            #   keys = ["allLocJson", "useZip"]
+            #   allLocJson 是 370591 字符的字符串，内含 804 个点
+            #
+            # App 的 `RunHistoryDetailBean` 读的是 `run_data.allLocJson`。
+            # 早先这里直接发 `[{...}, {...}]`，App 在那个 list 上取 `allLocJson`
+            # 得到 null —— 轨迹画不出来，围栏绿框也跟着画不出来，
+            # 两天后服务端复核判记录失效。
+            "run_data": gzip_base64_encode(
+                json.dumps({"allLocJson": all_loc_json, "useZip": False},
+                           separators=(",", ":"), ensure_ascii=False)),
             "step_freq_json": gzip_base64_encode(step_json_str),
             "speed_json": gzip_base64_encode(speed_json_str),
-            # PASS 样本的 segment_json 是 23 段完整表，CHEAT 是空 —— 补齐
+            # PASS 样本的 segment_json 是完整分段表，CHEAT 是空 —— 补齐
             "segment_json": gzip_base64_encode(seg_json_str),
             "fixed_point_json": gzip_base64_encode(five_pt_json),
             "runFaceCheck": gzip_base64_encode(""),
             "extension_json": gzip_base64_encode(""),
-            # PASS 样本有 3 圈 laps，CHEAT 为空 —— 补齐
+            # PASS 样本有圈表，CHEAT 为空 —— 补齐
             "laps_json": gzip_base64_encode(laps_json_str),
         }
 
