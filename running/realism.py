@@ -16,6 +16,11 @@ import random
 from collections import Counter
 from typing import List, Optional, Dict, Any, Tuple
 
+#: 默认体重（kg）。官方卡路里不是「每公里固定千卡」，而是 MET × 体重 × 时长；
+#: 平均功率也是 1.1 × 体重 × 速度，两处都依赖这个值。真机没有下发体重时
+#: （`sp_key_user` 里 weight 为 0.0）官方客户端按这个量级估算。
+DEFAULT_WEIGHT_KG = 68.0
+
 
 class PaceProfile:
     """分段线性、严格单调的配速曲线：时间比例 t∈[0,1] ↔ 距离比例 d∈[0,1]。
@@ -173,7 +178,23 @@ def physiological_profile(distance_m: float, time_sec: int,
     # vo2max 粗略随配速抬升，落在普通大学生区间，增大个体差异
     vo2max = round(min(60.0, max(38.0, 28.0 + pace_kmh * 1.5 + rng.uniform(-3.0, 3.0))), 1)
 
+    # 平均功率（W）= 1.1 × 体重 × 速度(m/s)。
+    #
+    # 真机有这个字段且非零（实测 2008m/663s → 223W），发 0 等于自称
+    # 「全程不做功」，与同时上报的配速、步频、卡路里三项都对不上。
+    # 1.1 是官方的体重→功率经验系数（来源：pace-forge `avg_power_for`
+    # 对真机样本的拟合，我们的样本 3.029m/s × 1.1 × 68kg = 226.6，
+    # 真机 223，差 1.6%，量级一致）。
+    #
+    # **必须取整**：服务端 avgPower 是整型（`RunDetail.avg_power: i64`）。
+    # 发 187.5 时它反序列化截断成 187 再拿去重算签名，而我们的签名串里是
+    # "187.5" —— 两边拼出的串不同，直接 10501「验证签名失败」。
+    # 这种错 body 内部完全自洽、本地自检也查不出来，只有真发一次才暴露。
+    speed_mps = (distance_m / time_sec) if time_sec > 0 else 0.0
+    avg_power = int(round(1.1 * DEFAULT_WEIGHT_KG * speed_mps)) if speed_mps > 0 else 0
+
     return {
+        "avgPower": avg_power,
         "avgHeartRate": avg_hr,
         "maxHeartRate": peak_hr,
         "restHeartRate": rest_hr,

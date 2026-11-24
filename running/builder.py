@@ -367,6 +367,15 @@ class RunningTrackBuilder:
             raise ValueError("距离必须为正，步数不能为负")
 
         physio = dict(physio or {})
+        # avgPower 兜底：`realism=False` 时调用方不生成生理画像，physio 是空
+        # 字典，avgPower 会退化成 0。真机这字段非零（实测 223W），发 0 等于
+        # 自称「全程不做功」，与同时上报的配速、步频、卡路里互相矛盾。
+        # 这里按同一条官方公式补算，保证「关掉拟真」也不会漏。
+        if not physio.get("avgPower"):
+            from .realism import DEFAULT_WEIGHT_KG as _W
+            _speed = (float(total_distance_m) / int(total_time_sec)) if int(total_time_sec) > 0 else 0.0
+            physio["avgPower"] = (int(round(1.1 * _W * _speed))
+                                  if _speed > 0 else 0)
         complete = (int(total_distance_m) >= int(sel_distance_m)) and (int(total_time_sec) >= int(sel_run_time_s))
         un_complete_reason = 0 if complete else 10
         avg_step_freq = round(total_steps * 60.0 / total_time_sec) if total_time_sec else 0
@@ -1108,6 +1117,30 @@ class RunningTrackBuilder:
     def _object_key(self, start_time_ms: int) -> str:
         return (f"runData/{self.uid}/{self.sport_type}/{start_time_ms // 1000}"
                 f"_{self.uuid}.txt")
+
+    def detail_object_key(self, start_time_ms: int) -> str:
+        """详情页读取的 OBS key：`run_data/{YYYYMMDDHH}/{uuid}.json`。
+
+        **小时目录用北京时间**（UTC+8），不是 UTC。实测：提交时服务器回填的
+        `startTime=1795488715000` 换算成北京时间是 `2026-11-24 10:51:55`，
+        真机样本落在 `run_data/2026112410/`，用的就是北京时间的小时数。
+        用 UTC 会算成 `02` 点，目录对不上，App 404 拉不到轨迹。
+
+        ## 与 `_object_key` 的分工
+
+        两个 key 都要写，但作用不同：
+
+        * 这个（`run_data/...json`）是**主路径** —— App 详情页拿它画轨迹与围栏；
+        * `_object_key`（`runData/...txt`）是**兜底**，服务端按 recordUrl 找不到时
+          才可能回退到这里。
+
+        早先只写兜底那个，App 拿不到轨迹 → 画不出绿框 → 两天后复核判
+        「轨迹无法归属到任何围栏」，记录失效。
+        """
+        import datetime as _dt
+        beijing = (_dt.datetime.fromtimestamp(int(start_time_ms) / 1000, _dt.timezone.utc)
+                   + _dt.timedelta(hours=8))
+        return "run_data/%s/%s.json" % (beijing.strftime("%Y%m%d%H"), self.uuid)
 
     # ------------------------------------------------------- PASS 形态点序列
     def build_pass_form_points(self,

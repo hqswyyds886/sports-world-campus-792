@@ -18,6 +18,7 @@ from core.pace import (
 from account.client import ProfileClient
 from policy.client import PolicyClient
 from history.client import HistoryClient
+from history.config import URL_RUN_RECORDS
 from history.models import parse_history_records
 from telemetry.client import TelemetryClient
 from .config import (
@@ -337,6 +338,9 @@ class _PreparedTrack(NamedTuple):
     save_record: Dict[str, Any]
     obs_payload: Dict[str, Any]
     object_key: str
+    #: 详情页读取的 OBS key（`run_data/{YYYYMMDDHH}/{uuid}.json`）。
+    #: 这是主路径 —— App 拿它画轨迹与围栏；`object_key` 只是兜底。
+    detail_object_key: str = ""
 
 
 class RunningClient(BaseNetSecClient):
@@ -389,6 +393,25 @@ class RunningClient(BaseNetSecClient):
                     pass
             return {"error": 10000, "data": data}
         return res if isinstance(res, dict) else {"error": -1, "message": str(res)}
+
+    def _put_obs_object(self, object_key: str, payload: dict) -> dict:
+        """换预签名 → PUT 一个 OBS 对象，返回 `{"error": 10000}` 表示成功。
+
+        把「申请凭证 + 上传」这两步收成一个动作，因为提交时需要**写两个 key**
+        （详情页 key 与兜底 key），逐个手写会把 5 行样板重复两遍，
+        且两处的错误处理容易写歪。
+        """
+        obs_res = self.request_obs_upload_url(object_key=object_key)
+        if obs_res.get("error") != 10000 or not obs_res.get("data"):
+            return {"error": obs_res.get("error", -1),
+                    "message": obs_res.get("message", "OBS凭证申请失败")}
+        obs_info = obs_res["data"]
+        signed_url = obs_info.get("signedUrl")
+        if not signed_url:
+            return {"error": -1, "message": "OBS 签名响应缺 signedUrl"}
+        signed_headers = (obs_info.get("actualSignedRequestHeaders")
+                          or {"Content-Type": "text/plain"})
+        return self.upload_to_obs(signed_url, signed_headers, payload)
 
     def upload_to_obs(self, signed_url: str, signed_headers: dict, payload: dict) -> dict:
         """直接以 PUT 请求向华为云 OBS 存储桶异步推送轨迹与步频载荷。
@@ -672,10 +695,48 @@ class RunningClient(BaseNetSecClient):
         log(f"风控预检: 结论 {report.level}"
             + (f" 触发 {len(report.warnings)} 项提示" if report.warnings else ""))
 
+        # 跨记录体检：把历史记录算成「像不像真人」的报告。
+        # 这是**纵向**风险，与上面单条报文的自洽性检查互补 ——
+        # 单条再完美也挡不住「连续 6 天同一整点起跑」「每条都恰好 2000 米」。
+        # 只提示、不拦截，与 riskguard 的降级原则一致。
+        try:
+            self._log_cross_record_audit(log)
+        except Exception as exc:
+            log(f"跨记录体检: 跳过（{type(exc).__name__}: {exc}）")
+
         if report.blocked:
             return report, RunningSubmissionResult(
                 success=False, message=f"风控预检未通过: {report.blocking_reason()}")
         return report, None
+
+    def _log_cross_record_audit(self, log) -> None:
+        """拉历史记录算跨记录指标，把命中的 AUDIT_* 打出来。
+
+        取最近 50 条足够 —— 连续天数、整点集中度、里程/配速变异系数在这个
+        窗口内就能算准；轨迹重合度需要 OBS 明细，这里不额外拉，
+        所以 `AUDIT_OVERLAP` 会如实显示「没有轨迹数据，跳过」。
+
+        **不能直接用 `get_run_records` 的默认参数**：它默认 `page_size=20`，
+        而连续天数阈值是 5 天、整点集中度要 6 成以上才有意义 —— 20 条在
+        「一天一条」的情形下刚好够，但一天两条就只剩 10 天窗口，连续天数会
+        被截断成假的。这里显式要 50 条。
+        """
+        from . import audit as audit_mod
+        resp = self.history.get_run_records(page_num=1, page_size=50)
+        rows = (resp.get("data") if isinstance(resp, dict) else None) or []
+        records = audit_mod.from_history_rows(rows)
+        metrics, findings = audit_mod.report(records)
+        if metrics.count == 0:
+            log("跨记录体检: 无历史样本")
+            return
+        warned = [f for f in findings if f.level == audit_mod.LEVEL_WARN]
+        log(f"跨记录体检: %d 条 · 连续 %d 天 · 整点集中 %.0f%% · 里程CV %.4f · 配速CV %.4f"
+            % (metrics.count, metrics.streak_best, metrics.hour_share * 100,
+               metrics.dist_cv, metrics.pace_cv))
+        for f in warned:
+            log("  " + f.line())
+        for tip in audit_mod.suggest(metrics, findings):
+            log("  建议: " + tip)
 
     # ---------------------------------------------------------------- 阶段 3
     def _prepare_track(self, setup: _RunSetup, sport_type: int, target_distance_m: int,
@@ -831,7 +892,9 @@ class RunningClient(BaseNetSecClient):
                               five_points=five_points,
                               save_record=save_record,
                               obs_payload=obs_payload,
-                              object_key=object_key), None
+                              object_key=object_key,
+                              detail_object_key=builder.detail_object_key(
+                                  setup.start_time_ms)), None
 
     # ---------------------------------------------------------------- 阶段 4
     def _wait_physical_time(self, target_time_sec: int, log) -> None:
@@ -879,29 +942,35 @@ class RunningClient(BaseNetSecClient):
         真实场景：用户点击「结束跑步」后 App 立即做时间校准、OBS 上传、成绩结算，
         耗时 10~30 秒（取决于网络）。
         """
-        # 4. 华为云 OBS 预签名上传
-        obs_res = self.request_obs_upload_url(object_key=track.object_key)
-        if obs_res.get("error") != 10000 or not obs_res.get("data"):
-            err = obs_res.get("message", "OBS凭证申请失败")
-            log(f"OBS上传: 失败 原因={err}")
-            return RunningSubmissionResult(success=False,
-                                           message=f"申请 OBS 上传凭证失败: {err}",
-                                           raw=obs_res)
-
-        obs_info = obs_res["data"]
-        signed_url = obs_info.get("signedUrl")
-        signed_headers = obs_info.get("actualSignedRequestHeaders") or {"Content-Type": "text/plain"}
-        put_res = self.upload_to_obs(signed_url, signed_headers, track.obs_payload)
-        if put_res.get("error") != 10000:
-            err = put_res.get("message", "推送失败")
-            log(f"OBS上传: 失败 原因={err}")
+        # 4. 华为云 OBS 预签名上传（**两个 key 都要写**）
+        #
+        # 真机与实测结论：详情页读的是 `run_data/{YYYYMMDDHH}/{uuid}.json`，
+        # 而 `runData/{uid}/{sportType}/{startSec}_{uuid}.txt` 只是兜底。
+        # 早先只写后者，App 拿不到轨迹与围栏 → 画不出绿框 →
+        # 两天后复核判「轨迹无法归属到任何围栏」，记录失效。
+        #
+        # 两个 key 的写入互不依赖：详情页那个失败要报错（它是主路径），
+        # 兜底那个失败只告警（服务端按 recordUrl 找，不影响结算）。
+        detail_key = track.detail_object_key
+        detail_res = self._put_obs_object(detail_key, track.obs_payload)
+        if detail_res.get("error") != 10000:
+            err = detail_res.get("message", "推送失败")
+            log(f"OBS上传: 失败（详情页 key）原因={err}")
             return RunningSubmissionResult(success=False,
                                            message=f"推送到 OBS 失败: {err}",
-                                           raw=put_res)
-        log("OBS上传: 成功 状态=已同步")
+                                           raw=detail_res)
+        log("OBS上传: 成功 详情页key")
+
+        fallback_res = self._put_obs_object(track.object_key, track.obs_payload)
+        if fallback_res.get("error") == 10000:
+            log("OBS上传: 成功 兜底key")
+        else:
+            # 兜底 key 失败不阻断：服务端按 recordUrl 关联，主数据已在详情页 key
+            log(f"OBS上传: 兜底key 失败（不阻断）原因={fallback_res.get('message')}")
 
         # 4.1 上传成功后填入 recordUrl (服务端用于关联轨迹数据)
-        track.save_record["recordUrl"] = track.object_key
+        #     填详情页那个 key —— 它才是 App 实际读取的位置
+        track.save_record["recordUrl"] = detail_key
         track.save_record["isUpload"] = True
 
         # 5. 核心跑步结算上报 (save/record)

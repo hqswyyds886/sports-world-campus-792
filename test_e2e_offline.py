@@ -164,11 +164,14 @@ class OfflineEndToEndTests(unittest.TestCase):
 
     def test_stage_order_matches_capture(self):
         self.run_client()
+        # 两个 OBS key 都要写：`run_data/...json` 是详情页主路径（App 拿它画
+        # 轨迹与围栏），`runData/...txt` 是兜底。顺序固定为主 → 兜底。
         self.assertEqual(self.order, [
             'policy',                                              # 先取学校规则
             'server_time', 'startup_pv', 'page_exposure',          # 冷启动
             'fence', 'checkpoints',                                # 围栏与点位
-            'obs_url', 'obs_put',                                  # 轨迹上传
+            'obs_url', 'obs_put',                                  # 轨迹上传（详情页 key）
+            'obs_url', 'obs_put',                                  # 轨迹上传（兜底 key）
             'submit',                                              # 结算
             'record_detail', 'rundetail_config', 'page_exposure',   # 跑后回查
         ])
@@ -210,10 +213,20 @@ class OfflineEndToEndTests(unittest.TestCase):
         self.assertEqual(body['selRunTime'], 300)
         self.assertTrue(body['complete'])
         self.assertEqual(body['unCompleteReason'], 0)
-        # 上传成功后才回填，服务端靠这两个字段关联 OBS 对象
+        # 上传成功后才回填，服务端靠这两个字段关联 OBS 对象。
+        # recordUrl 必须指向**详情页那个 key**（`run_data/...json`），不是兜底
+        # 的 `runData/...txt` —— App 详情页读的是前者，填后者就画不出轨迹与围栏。
         self.assertTrue(body['isUpload'])
-        self.assertEqual(body['recordUrl'],
-                         self.client.request_obs_upload_url.call_args.kwargs['object_key'])
+        self.assertTrue(body['recordUrl'].startswith('run_data/'),
+                        f"recordUrl 必须指向详情页 key，实际 {body['recordUrl']}")
+        self.assertTrue(body['recordUrl'].endswith('.json'))
+        # 两个 key 都申请过预签名，且详情页那个是最后被 recordUrl 采用的那个
+        asked_keys = [c.kwargs['object_key']
+                      for c in self.client.request_obs_upload_url.call_args_list]
+        self.assertIn(body['recordUrl'], asked_keys)
+        self.assertEqual(len(asked_keys), 2, f"应当写两个 OBS key，实际 {asked_keys}")
+        self.assertTrue(any(k.startswith('runData/') for k in asked_keys),
+                        f"兜底 key 缺失：{asked_keys}")
 
     def test_uuid_is_shared_between_point_request_and_record(self):
         self.run_client()
