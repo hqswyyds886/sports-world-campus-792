@@ -22,6 +22,8 @@ SESSION_FILE = get_session_file_path()
 
 def main():
     parser = argparse.ArgumentParser(description="运动世界校园 7.3.92 纯协议套件")
+    parser.add_argument("-V", "--version", action="store_true",
+                        help="打印版本信息（版本号、目标 App、协议栈）")
     parser.add_argument("-u", "--username", help="登录账号 (手机号)")
     parser.add_argument("-p", "--password", help="登录密码")
     parser.add_argument("-t", "--token", help="已有登录 Token")
@@ -59,6 +61,17 @@ def main():
     parser.add_argument("--ad-duration", type=int, default=15, help="广告观看耗时 (秒，默认 15)")
 
     args = parser.parse_args()
+
+    # 版本信息：不联网、不读凭据，最优先处理
+    if args.version:
+        import version as _v
+        meta = _v.info()
+        print("运动世界校园协议套件")
+        print("  版本      %s（%s）" % (meta["version"], meta["released"]))
+        print("  目标 App  %s" % meta["target_app"])
+        print("  协议栈    %s" % meta["protocol"])
+        print("  变更历史  CHANGELOG.md")
+        return
 
     # 退出登录：清除本地缓存凭据
     if args.logout:
