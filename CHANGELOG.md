@@ -190,8 +190,10 @@
 
 ### 已知限制
 
-- `test_config.py` 有一条目录名断言失败（解压目录不叫 `7.3.92`），属环境问题
-- `test_pace_display.py` 在 Windows 上因 GBK 解码 Node 输出失败，与本项目逻辑无关
+- ~~`test_config.py` 有一条目录名断言失败（解压目录不叫 `7.3.92`），属环境问题~~
+  → v1.1.0 已修（断言改为验证「指向仓库根」这个真契约）
+- ~~`test_pace_display.py` 在 Windows 上因 GBK 解码 Node 输出失败，与本项目逻辑无关~~
+  → v1.1.0 已修（显式钉住 `encoding="utf-8"`）
 - 网络栈是 `urllib` + OpenSSL，无 OkHttp 的 JA3 指纹，服务端若做 TLS 指纹比对无法自证
 
 ---
