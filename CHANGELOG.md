@@ -7,12 +7,96 @@
 
 ## [Unreleased]
 
-### 计划中
+（暂无）
 
-- 提交时同时写入两个 OBS key（`run_data/{YYYYMMDDHH}/{uuid}.json` 与 `runData/{uid}/{sportType}/{startSec}_{uuid}.txt`），
-  目前只有后者，前者需手工补救
-- `avgPower` 字段目前固定 0，真机有真实值（实测 223 量级）
-- 补齐 `AUDIT_*` 系列自检：连续天数、整点集中度、里程变异系数、轨迹重合度
+---
+
+## [1.1.0] - 2026-11-24
+
+把 v1.0.0 的「三项待补」做完，并修掉做完之后才暴露的两个自身缺陷。
+
+### 新增
+
+- **提交时同时写入两个 OBS key**
+  详情页主路径 `run_data/{YYYYMMDDHH}/{uuid}.json` + 兜底
+  `runData/{uid}/{sportType}/{startSec}_{uuid}.txt`。
+  `recordUrl` 回填**详情页那个**。v1.0.0 只写兜底 key，App 拿不到轨迹
+  → 画不出绿框 → 两天后复核判「轨迹无法归属到任何围栏」。
+
+  > **小时目录用北京时间（UTC+8），不是 UTC。** 实测
+  > `startTime=1795488715000` → UTC `02:51`、北京 `10:51`，真机样本落在
+  > `run_data/2026112410/`。用 UTC 会算成 `02` 点，目录对不上，App 404。
+
+  两个 key 的错误处理**故意不对称**：详情页 key 失败即中止（它是主路径），
+  兜底 key 失败只告警（服务端按 `recordUrl` 关联，不影响结算）。
+
+- **`avgPower` 真实值**（真机 2008m/663s → 223W）
+  公式 `1.1 × 体重 × 速度(m/s)`，`DEFAULT_WEIGHT_KG = 68.0`。
+  `realism=False` 时 `physio` 是空字典会退化成 0，故 `build_submission_payload`
+  里再兜一次，保证关掉拟真也不漏。本机样本算出 227W，与真机差 1.8%。
+
+  > **必须取整。** 服务端 `avgPower` 是 `i64`，发 `187.5` 时它截断成 `187`
+  > 再重算签名，而我们的签名串里是 `"187.5"` —— 两侧拼串不同，直接
+  > `10501 验证签名失败`。这种错 body 内部完全自洽，本地自检也查不出来。
+
+- **`running/audit.py` — 跨记录体检**（`--audit`）
+  把历史记录算成「像不像真人」的报告，补上单条报文自洽性**管不到**的纵向风险：
+  单条再完美也挡不住「连续 6 天同一整点起跑」「每条都恰好 2000 米」。
+
+  | 检查码 | 阈值 | 命中含义 |
+  |---|---|---|
+  | `AUDIT_STREAK` | ≥ 5 天 | 能画出一条直线 |
+  | `AUDIT_HOUR` | ≥ 60% | 起跑时刻集中同一整点 |
+  | `AUDIT_DIST_FLAT` | CV < 0.05 | 每条里程一样 |
+  | `AUDIT_PACE_FLAT` | CV < 0.02 | 每条配速一样 |
+  | `AUDIT_OVERLAP` | ≥ 90% | 两两轨迹同一条线 |
+  | `AUDIT_REVERSE` | 反向 | 同线反跑（真人行为，只陈述） |
+  | `AUDIT_MIDNIGHT` | 23 时 / 0 时 | 贴规则时段边界 |
+
+  接入两处：`--audit` 单独出报告，`--run` 时在风控预检后顺带打一遍。
+  **只提示、不拦截**，与 `riskguard` 的降级原则一致；任何异常都降级成
+  一行「跳过」，绝不让辅助功能反过来挡住提交。
+
+- **`test_audit.py`** — 21 项离线回归（机器人样本全命中、真人样本不误报、
+  退化输入不崩）。
+
+### 修复
+
+- **`URL_RUN_RECORDS` 未导入**（新增代码自身的 bug）
+  `client._log_cross_record_audit` 直接用了这个名字，但 `running/client.py`
+  的 `from .config import (...)` 里没有它。后果是**每次 `--run` 都抛
+  `NameError`，被外层 `try/except` 吃掉后打成一行「跨记录体检: 跳过」** ——
+  功能看起来在跑，实际永远不生效。改为走既有的
+  `history.get_run_records()`，并显式要 `page_size=50`。
+
+- **`_print_audit` 探测了不存在的方法**
+  原写法 `hasattr(client.history, "get_records")` —— `HistoryClient` 上
+  这个方法叫 `get_run_records`。`hasattr` 恒为 `False`，于是每次都退到
+  硬编码 URL 的分支，把 `https://run.gxapp.iydsj.com/...` 写死在 `cli.py` 里。
+  改为直接调 `get_run_records`，URL 只留在 `history/config.py` 一处。
+
+### 变更
+
+- `--audit` 计入 `_no_explicit_action` —— 否则单独跑 `--audit` 会被当成
+  「没有任何具体动作」，额外触发一次时钟同步。
+
+### 已验证
+
+| 项目 | 结果 |
+|---|---|
+| `pass_parity` | 25/25 × 2 基准 |
+| `fence_parity` | 17/17，8 顶点逐点相同 |
+| `test_audit` | 21/21 |
+| `test_e2e_offline` | 15/15（两条断言按双 key 行为更新） |
+| 全量离线用例 | 220 项，失败 2 项均为既有环境问题（见「已知限制」） |
+| `detail_object_key(1795488715000)` | `run_data/2026112410/...`，与真机样本目录一致 |
+| `avgPower` | 拟真开/关两条路径均为 227（真机 223） |
+
+### 未验证
+
+**双 key 写入还没有实机提交验证过。** 代码路径与 key 形态已对拍一致，
+但「App 里当天记录是否出现绿框」只能靠真机看一眼。这是 v1.1.0 唯一
+悬着的结论。
 
 ---
 

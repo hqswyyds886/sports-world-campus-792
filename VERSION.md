@@ -5,7 +5,7 @@
 
 ```toml
 [version]
-current     = "1.0.0"
+current     = "1.1.0"
 released    = "2026-11-24"
 target_app  = "7.3.92"
 protocol    = "NetSecKit 4.2.4"
@@ -15,6 +15,7 @@ protocol    = "NetSecKit 4.2.4"
 
 | 客户端版本 | 目标 App | 协议 | 状态 |
 |---|---|---|---|
+| 1.1.0 | 7.3.92 | NetSecKit 4.2.4 | 离线全绿；双 key 写入待实机确认绿框 |
 | 1.0.0 | 7.3.92 | NetSecKit 4.2.4 | 已验证（实机提交通过） |
 
 ## 校验和
@@ -49,4 +50,8 @@ python test_run_consistency.py
 python test_e2e_offline.py
 python test_crypto.py
 python test_realism.py
+python test_audit.py
+
+# 发布门禁（静态 + 导入 + 全量用例 + 配置健康，必须 5/5）
+python smoke.py
 ```

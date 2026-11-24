@@ -1,13 +1,13 @@
 # 运动世界校园 7.3.92 协议套件
 
-[![version](https://img.shields.io/badge/version-1.0.0-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-1.1.0-blue)](CHANGELOG.md)
 [![target](https://img.shields.io/badge/target%20app-7.3.92-green)](VERSION.md)
 [![protocol](https://img.shields.io/badge/NetSecKit-4.2.4-orange)](FINDINGS.md)
 [![license](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
 纯 Python 实现的运动世界校园 7.3.92 协议客户端，支持跑步提交、拟真增强、Web 控制台等功能。
 
-> **版本 1.0.0** · 2026-11-24 · 首个通过实机验证的版本
+> **版本 1.1.0** · 2026-11-24 · 双 key 写入 + avgPower 真值 + 跨记录体检
 >
 > 变更历史见 [CHANGELOG.md](CHANGELOG.md)，兼容性矩阵与校验和见 [VERSION.md](VERSION.md)，
 > 逆向结论与判罚链路证据见 [FINDINGS.md](FINDINGS.md)。
