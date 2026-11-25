@@ -1,6 +1,6 @@
 # 运动世界校园 7.3.92 协议套件
 
-[![version](https://img.shields.io/badge/version-1.1.0-blue)](CHANGELOG.md)
+[![version](https://img.shields.io/badge/version-1.1.1-blue)](CHANGELOG.md)
 [![target](https://img.shields.io/badge/target%20app-7.3.92-green)](VERSION.md)
 [![protocol](https://img.shields.io/badge/NetSecKit-4.2.4-orange)](FINDINGS.md)
 [![license](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)

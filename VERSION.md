@@ -5,8 +5,8 @@
 
 ```toml
 [version]
-current     = "1.1.0"
-released    = "2026-11-24"
+current     = "1.1.1"
+released    = "2026-11-25"
 target_app  = "7.3.92"
 protocol    = "NetSecKit 4.2.4"
 ```
@@ -15,6 +15,7 @@ protocol    = "NetSecKit 4.2.4"
 
 | 客户端版本 | 目标 App | 协议 | 状态 |
 |---|---|---|---|
+| 1.1.1 | 7.3.92 | NetSecKit 4.2.4 | 退出登录 fail-closed 已修；Web 控制台实机验证 |
 | 1.1.0 | 7.3.92 | NetSecKit 4.2.4 | 离线全绿；双 key 写入待实机确认绿框 |
 | 1.0.0 | 7.3.92 | NetSecKit 4.2.4 | 已验证（实机提交通过） |
 

@@ -308,9 +308,36 @@ async function doRun(){
   if(await post('/api/run',{mode:+runMode.value, distance:+runDist.value, time_sec:+runTime.value, realism:runRealism.checked})) startPolling();
 }
 async function doLogout(){
-  if(!(await showConfirm('确认退出登录？将清除本地缓存的凭据。'))) return;
-  await post('/api/logout'); refreshStatus();
-  document.getElementById('log').textContent = '已退出登录';
+  if(!(await showConfirm('确认退出登录？\n\n会先通知服务端让 token 失效，再清除本地凭据。\n如果只清本地而服务端仍认为你在线，手机 App 会登不上去（提示账号在其他设备登录）。'))) return;
+  // 这里**不用 post()**：它把 ok:false 折成 null，失败原因就丢了。
+  // 退出登录恰恰最需要知道「服务端到底确认没有」—— 否则用户只会看到
+  // 网页上写着「已退出」，手机上却登不进去，完全不知道发生了什么。
+  const logEl = document.getElementById('log');
+  let r = null, err = '';
+  try{
+    const resp = await fetch('/api/logout', {method:'POST',
+      headers:{'Content-Type':'application/json'}, body:'{}'});
+    r = await resp.json();
+  }catch(e){
+    err = (e && e.message) ? e.message : String(e);
+  }
+
+  if(err){
+    logEl.textContent = '⚠ 退出请求本身失败：' + err
+      + '\n\n本地凭据**仍保留**，服务端会话可能还有效。可以再点一次重试。';
+    showMessage('退出请求失败：' + err);
+  }else if(r && r.ok && r.server_confirmed){
+    logEl.textContent = '已退出登录（服务端已确认 token 失效）';
+  }else if(r && r.ok){
+    logEl.textContent = '本地凭据已清除：' + (r.message || '');
+  }else{
+    logEl.textContent = '⚠ 退出未完成：' + ((r && r.message) || '未知原因')
+      + '\n\n本地凭据**仍保留**，可以直接再点一次「退出登录」重试。\n'
+      + '如果一直失败：手机端要登录的话，先在 App 内「我的 → 设置 → 退出登录」，'
+      + '或在实机上等一下（服务端设备锁通常约一小时自动释放）。';
+    showMessage('退出未完成：服务端没有确认，本地凭据已保留可重试。');
+  }
+  refreshStatus();
 }
 
 // 记住账号与设备指纹（仅存浏览器 localStorage，且仅限本机）

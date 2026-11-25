@@ -353,10 +353,82 @@ def api_action():
 
 @app.post("/api/logout")
 def api_logout():
-    if os.path.exists(SESSION_FILE):
+    """退出登录 —— **必须通知服务端**，不能只删本地文件。
+
+    早先这里只 `os.remove(SESSION_FILE)`，网页上看着退出了，但服务端会话
+    仍然有效。服务端把「这个账号还在线」记着，手机上再登录就撞 10121
+    「账号已在其他设备登录」，而且会锁约一小时。
+
+    正确流程（与 logout_account.py 一致，fail-closed）：
+
+        1. 调 POST /api/v6/user/logout，token 走 header、body 是空对象 {}
+        2. 只有服务端明确返回 error=10000 才删本地凭据
+        3. 响应不可解析 / 请求失败一律**不删** —— 留着凭据还能稍后重试，
+           删了就把自己锁在账号外面，且服务端仍认为在线
+
+    返回里带 `server_confirmed` 让前端能区分「真退了」和「本地清了但
+    服务端没确认」，后者要提示用户稍后重试。
+    """
+    if not os.path.exists(SESSION_FILE):
+        return {"ok": True, "server_confirmed": True, "message": "当前没有缓存凭据"}
+
+    sess = load_session(SESSION_FILE) or {}
+    token = sess.get("token") or ""
+    uid = sess.get("uid")
+
+    if not token:
+        # 没有 token 就没有服务端会话可注销，删本地是安全的
         os.remove(SESSION_FILE)
-        return {"ok": True, "message": "已清除本地登录凭据"}
-    return {"ok": True, "message": "当前没有缓存凭据"}
+        return {"ok": True, "server_confirmed": True,
+                "message": "本地凭据已清除（无 token，服务端无会话可注销）"}
+
+    try:
+        client = SportClient792(uid=uid, token=token, unid=sess.get("unid"))
+        resp = client.profile.execute_request(
+            "POST", "https://run.gxapp.iydsj.com/api/v6/user/logout", body_plain={})
+    except Exception as exc:
+        # fail-closed：不删凭据，让用户还能重试
+        return {"ok": False, "server_confirmed": False,
+                "message": "服务端注销请求失败（%s: %s）。本地凭据已保留，可稍后重试。"
+                           % (type(exc).__name__, exc)}
+
+    raw = resp if isinstance(resp, str) else json.dumps(resp, ensure_ascii=False)
+    if not _confirms_logout(raw):
+        return {"ok": False, "server_confirmed": False,
+                "message": "服务端未确认登出（响应：%s）。本地凭据已保留，避免把自己锁在账号外。"
+                           % raw[:160]}
+
+    os.remove(SESSION_FILE)
+    return {"ok": True, "server_confirmed": True,
+            "message": "服务端已确认 token 失效，本地凭据已清除"}
+
+
+def _confirms_logout(raw: str) -> bool:
+    """服务端响应是否明确确认登出成功。
+
+    与 `logout_account.confirms_logout` 同一套判定，含信封形态
+    `{"r": "<内层json>"}` —— 加密栈换了包装也不会误判。
+    """
+    try:
+        v = json.loads(raw)
+    except Exception:
+        return False
+    if not isinstance(v, dict):
+        return False
+    err = v.get("error", v.get("code"))
+    if isinstance(err, int):
+        return err == 10000
+    inner_raw = v.get("r")
+    if isinstance(inner_raw, str):
+        try:
+            inner = json.loads(inner_raw)
+        except Exception:
+            return False
+        if isinstance(inner, dict):
+            e = inner.get("error", inner.get("code"))
+            if isinstance(e, int):
+                return e == 10000
+    return False
 
 
 @app.get("/api/config")
